@@ -29,7 +29,6 @@ const Cart = () => {
     totalAmount: 0,
   });
 
-  // Build cart array from cartItems and products
   const getCart = () => {
     let tempArray = [];
     for (const key in cartItems) {
@@ -42,10 +41,12 @@ const Cart = () => {
     setCartArray(tempArray);
   };
 
-  // Fetch user addresses
   const getUserAddress = async () => {
     try {
-      const { data } = await axios.get("/api/address/get");
+      const { data } = await axios.get("/api/address/get", {
+        withCredentials: true,
+      });
+
       if (data.success) {
         setAddresses(data.addresses);
         if (data.addresses.length > 0) {
@@ -59,36 +60,31 @@ const Cart = () => {
     }
   };
 
-  // Calculate subtotal, tax and totalAmount on cartArray or paymentOption change
   useEffect(() => {
     const subtotal = cartArray.reduce(
       (acc, item) => acc + item.offerPrice * item.quantity,
       0
     );
-
-    // Tax only for Razorpay payments
-    const tax = paymentOption === "RAZORPAY" ? +(subtotal * 0.0211).toFixed(2) : 0;
-
+    const tax =
+      paymentOption === "RAZORPAY"
+        ? +(subtotal * 0.0211).toFixed(2)
+        : 0;
     const totalAmount = +(subtotal + tax).toFixed(2);
-
     setOrderAmounts({ subtotal, tax, totalAmount });
   }, [cartArray, paymentOption]);
 
-  // Load cart whenever products or cartItems change
   useEffect(() => {
     if (products.length > 0 && cartItems) {
       getCart();
     }
   }, [products, cartItems]);
 
-  // Load user addresses on user change
   useEffect(() => {
     if (user) {
       getUserAddress();
     }
   }, [user]);
 
-  // Place order handler
   const placeOrder = async () => {
     try {
       if (!selectedAddress) {
@@ -100,11 +96,15 @@ const Cart = () => {
         quantity: item.quantity,
       }));
 
+      const orderPayload = {
+        userId: user._id,
+        items,
+        address: selectedAddress._id,
+      };
+
       if (paymentOption === "COD") {
-        const { data } = await axios.post("/api/order/cod", {
-          userId: user._id,
-          items,
-          address: selectedAddress._id,
+        const { data } = await axios.post("/api/order/cod", orderPayload, {
+          withCredentials: true,
         });
 
         if (data.success) {
@@ -115,14 +115,11 @@ const Cart = () => {
           toast.error(data.message);
         }
       } else if (paymentOption === "RAZORPAY") {
-        const { data } = await axios.post("/api/order/razorpay", {
-          userId: user._id,
-          items,
-          address: selectedAddress._id,
+        const { data } = await axios.post("/api/order/razorpay", orderPayload, {
+          withCredentials: true,
         });
 
         if (data.success) {
-          // Override amounts from backend (optional)
           setOrderAmounts({
             subtotal: data.subtotal,
             tax: data.tax,
@@ -131,7 +128,7 @@ const Cart = () => {
 
           const options = {
             key: data.key || import.meta.env.VITE_RAZORPAY_KEY,
-            amount: data.amount, // amount in paise from backend
+            amount: data.amount,
             currency: data.currency,
             order_id: data.razorpayOrderId,
             name: "GreenCart",
