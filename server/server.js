@@ -24,37 +24,31 @@ try {
   process.exit(1);
 }
 
-// ✅ Add all allowed frontend origins
+// Allowed origins for CORS
 const allowedOrigins = [
-  'http://localhost:5173',                  // local dev (common default)
-  'http://localhost:5174',                  // ✅ your current frontend dev port
-  'https://my-store-deploy.vercel.app',    // deployed frontend
+  'http://localhost:5173',                // Local dev ports
+  'http://localhost:5174',
+  'https://my-store-deploy.vercel.app',  // Main deployed frontend
 ];
 
-// ✅ CORS middleware
+// CORS middleware
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // allow requests with no origin (e.g. curl, Postman)
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    const msg = `CORS policy does not allow access from origin: ${origin}`;
-    return callback(new Error(msg), false);
-  },
-  credentials: true, // allow cookies, Authorization headers, etc.
+  origin: allowedOrigins,
+  credentials: true,
 }));
 
-// ✅ Razorpay webhook - raw body must come before express.json
+
+// Razorpay webhook must be before json parser
 app.post('/razorpay-webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
 
-// ✅ Other middlewares
+// Other middlewares
 app.use(express.json());
 app.use(cookieParser());
 
-// ✅ Test route
+// Test route
 app.get('/', (req, res) => res.send("API is Working"));
 
-// ✅ Main API routes
+// API routes
 app.use('/api/user', userRouter);
 app.use('/api/seller', sellerRouter);
 app.use('/api/product', productRouter);
@@ -62,7 +56,7 @@ app.use('/api/cart', cartRouter);
 app.use('/api/address', addressRouter);
 app.use('/api/order', orderRouter);
 
-// ✅ Global error handler
+// Global error handler
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err.message || err);
   if (err.message && err.message.startsWith('CORS')) {
@@ -71,7 +65,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal Server Error' });
 });
 
-// ✅ Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });

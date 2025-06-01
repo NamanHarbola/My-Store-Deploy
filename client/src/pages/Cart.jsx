@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { useAppContext } from "../context/AppContext";
 import { assets } from "../assets/assets";
 import toast from "react-hot-toast";
+import axios from "axios";
+
+// Create axios instance with backend URL & credentials
+const axiosInstance = axios.create({
+  baseURL: "https://my-store-deploy.onrender.com", // <-- your backend URL
+  withCredentials: true, // send cookies with requests
+});
 
 const Cart = () => {
   const {
@@ -13,7 +20,6 @@ const Cart = () => {
     updateCartItem,
     navigate,
     getCartAmount,
-    axios,
     user,
     setCartItems,
   } = useAppContext();
@@ -43,10 +49,7 @@ const Cart = () => {
 
   const getUserAddress = async () => {
     try {
-      const { data } = await axios.get("/api/address/get", {
-        withCredentials: true,
-      });
-
+      const { data } = await axiosInstance.get("/api/address/get");
       if (data.success) {
         setAddresses(data.addresses);
         if (data.addresses.length > 0) {
@@ -56,7 +59,7 @@ const Cart = () => {
         toast.error(data.message);
       }
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || error.message);
     }
   };
 
@@ -65,10 +68,7 @@ const Cart = () => {
       (acc, item) => acc + item.offerPrice * item.quantity,
       0
     );
-    const tax =
-      paymentOption === "RAZORPAY"
-        ? +(subtotal * 0.0211).toFixed(2)
-        : 0;
+    const tax = paymentOption === "RAZORPAY" ? +(subtotal * 0.0211).toFixed(2) : 0;
     const totalAmount = +(subtotal + tax).toFixed(2);
     setOrderAmounts({ subtotal, tax, totalAmount });
   }, [cartArray, paymentOption]);
@@ -103,9 +103,7 @@ const Cart = () => {
       };
 
       if (paymentOption === "COD") {
-        const { data } = await axios.post("/api/order/cod", orderPayload, {
-          withCredentials: true,
-        });
+        const { data } = await axiosInstance.post("/api/order/cod", orderPayload);
 
         if (data.success) {
           toast.success(data.message);
@@ -115,9 +113,7 @@ const Cart = () => {
           toast.error(data.message);
         }
       } else if (paymentOption === "RAZORPAY") {
-        const { data } = await axios.post("/api/order/razorpay", orderPayload, {
-          withCredentials: true,
-        });
+        const { data } = await axiosInstance.post("/api/order/razorpay", orderPayload);
 
         if (data.success) {
           setOrderAmounts({
@@ -158,7 +154,7 @@ const Cart = () => {
         }
       }
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || error.message);
     }
   };
 
@@ -283,92 +279,80 @@ const Cart = () => {
 
         <div className="mb-6">
           <p className="text-sm font-medium uppercase">Delivery Address</p>
-          <div className="relative flex justify-between items-start mt-2">
-            <p className="text-gray-500">
+          <div className="relative flex justify-between items-center border border-gray-300 rounded-md p-2 mt-1">
+            <p className="text-gray-600">
               {selectedAddress
-                ? `${selectedAddress.street}, ${selectedAddress.city}, ${selectedAddress.state}, ${selectedAddress.country}`
-                : "No address found"}
+                ? `${selectedAddress.street}, ${selectedAddress.city} - ${selectedAddress.zip}`
+                : "No Address Selected"}
             </p>
             <button
               onClick={() => setShowAddress(!showAddress)}
-              className="text-primary hover:underline cursor-pointer"
+              className="bg-primary rounded-md px-3 py-1 text-white"
             >
-              Change
+              {showAddress ? "Hide" : "Change"}
             </button>
-            {showAddress && (
-              <div className="absolute top-12 py-1 bg-white border border-gray-300 text-sm w-full z-10">
-                {addresses.map((address, index) => (
-                  <p
-                    key={index}
+          </div>
+
+          {showAddress && (
+            <div className="max-h-44 overflow-y-auto mt-2 border border-gray-300 rounded-md p-2">
+              {addresses.length > 0 ? (
+                addresses.map((address) => (
+                  <div
+                    key={address._id}
+                    className={`p-2 cursor-pointer rounded-md ${
+                      selectedAddress?._id === address._id
+                        ? "bg-primary text-white"
+                        : "hover:bg-gray-300"
+                    }`}
                     onClick={() => {
                       setSelectedAddress(address);
                       setShowAddress(false);
                     }}
-                    className="text-gray-500 p-2 hover:bg-gray-100 cursor-pointer"
                   >
-                    {address.street}, {address.city}, {address.state},{" "}
-                    {address.country}
-                  </p>
-                ))}
-                <p
-                  onClick={() => navigate("/add-address")}
-                  className="text-primary text-center cursor-pointer p-2 hover:bg-primary/10"
-                >
-                  Add address
+                    <p>{`${address.street}, ${address.city} - ${address.zip}`}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-600">
+                  No saved addresses. Please add one in your profile.
                 </p>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
+        </div>
 
-          <p className="text-sm font-medium uppercase mt-6">Payment Method</p>
-
+        <div className="mb-6">
+          <p className="text-sm font-medium uppercase">Payment Options</p>
           <select
-            onChange={(e) => setPaymentOption(e.target.value)}
-            className="w-full border border-gray-300 bg-white px-3 py-2 mt-2 outline-none"
             value={paymentOption}
+            onChange={(e) => setPaymentOption(e.target.value)}
+            className="w-full p-2 rounded border border-gray-300 mt-1"
           >
-            <option value="COD">Cash On Delivery</option>
+            <option value="COD">Cash on Delivery (COD)</option>
             <option value="RAZORPAY">Online Payment (Razorpay)</option>
           </select>
         </div>
 
-        <hr className="border-gray-300" />
-
-        <div className="text-gray-500 mt-4 space-y-2">
-          <p className="flex justify-between">
-            <span>Price</span>
-            <span>
-              {currency}
-              {orderAmounts.subtotal.toFixed(2)}
-            </span>
-          </p>
-          <p className="flex justify-between">
-            <span>Shipping Fee</span>
-            <span className="text-green-600">Free</span>
+        <div className="mb-6 text-sm">
+          <p>
+            Subtotal: <strong>{currency}{orderAmounts.subtotal.toFixed(2)}</strong>
           </p>
           {paymentOption === "RAZORPAY" && (
-            <p className="flex justify-between">
-              <span>Tax (2.11%)</span>
-              <span>
-                {currency}
-                {orderAmounts.tax.toFixed(2)}
-              </span>
+            <p>
+              Tax (2.11%): <strong>{currency}{orderAmounts.tax.toFixed(2)}</strong>
             </p>
           )}
-          <p className="flex justify-between text-lg font-medium mt-3">
-            <span>Total Amount:</span>
-            <span>
-              {currency}
-              {orderAmounts.totalAmount.toFixed(2)}
-            </span>
+          <p>
+            Total: <strong>{currency}{orderAmounts.totalAmount.toFixed(2)}</strong>
           </p>
         </div>
 
         <button
+          className="bg-primary w-full py-2 text-white rounded font-semibold disabled:opacity-50"
           onClick={placeOrder}
-          className="w-full py-3 mt-6 cursor-pointer bg-primary text-white font-medium hover:bg-primary-dull transition"
+          disabled={cartArray.length === 0 || !selectedAddress}
         >
-          {paymentOption === "COD" ? "Place Order" : "Proceed to Checkout"}
+          Place Order
         </button>
       </div>
     </div>

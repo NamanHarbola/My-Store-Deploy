@@ -9,9 +9,9 @@ axios.defaults.baseURL = import.meta.env.VITE_BACKEND_URL;
 export const AppContext = createContext();
 
 export const AppContextProvider = ({ children }) => {
-  const currency = import.meta.env.VITE_CURRENCY || "₹"; // Provide default currency fallback
-
+  const currency = import.meta.env.VITE_CURRENCY || "₹";
   const navigate = useNavigate();
+
   const [user, setUser] = useState(null);
   const [isSeller, setIsSeller] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState(false);
@@ -19,20 +19,25 @@ export const AppContextProvider = ({ children }) => {
   const [cartItems, setCartItems] = useState({});
   const [searchQuery, setSearchQuery] = useState({});
 
-  // Fetch Seller Status
+  // ✅ Fetch Seller Auth Status
   const fetchSeller = async () => {
     try {
-      const { data } = await axios.get("/api/seller/is-auth");
+      const { data } = await axios.get("/api/seller/is-auth", {
+        withCredentials: true,
+      });
       setIsSeller(data.success === true);
-    } catch (error) {
+    } catch {
       setIsSeller(false);
     }
   };
 
-  // Fetch User Auth Status, User Data and Cart Items
+  // ✅ Fetch User Auth Status
   const fetchUser = async () => {
     try {
-      const { data } = await axios.get("/api/user/is-auth");
+      const { data } = await axios.get("/api/user/is-auth", {
+        withCredentials: true,
+      });
+
       if (data.success) {
         setUser(data.user);
         setCartItems(data.user.cartItems || {});
@@ -41,12 +46,13 @@ export const AppContextProvider = ({ children }) => {
         setCartItems({});
       }
     } catch (error) {
+      console.error("Fetch user error:", error?.response?.data || error.message);
       setUser(null);
       setCartItems({});
     }
   };
 
-  // Fetch All Products
+  // ✅ Fetch All Products
   const fetchProducts = async () => {
     try {
       const { data } = await axios.get("/api/product/");
@@ -60,7 +66,6 @@ export const AppContextProvider = ({ children }) => {
     }
   };
 
-  // Add Product to Cart
   const addToCart = (itemId) => {
     const cartData = { ...cartItems };
     cartData[itemId] = (cartData[itemId] || 0) + 1;
@@ -68,7 +73,6 @@ export const AppContextProvider = ({ children }) => {
     toast.success("Added to Cart");
   };
 
-  // Update Cart Item Quantity
   const updateCartItem = (itemId, quantity) => {
     const cartData = { ...cartItems };
     if (quantity <= 0) {
@@ -80,7 +84,6 @@ export const AppContextProvider = ({ children }) => {
     toast.success("Cart Updated");
   };
 
-  // Remove Product from Cart (decrement quantity or remove)
   const removeFromCart = (itemId) => {
     const cartData = { ...cartItems };
     if (cartData[itemId]) {
@@ -93,12 +96,9 @@ export const AppContextProvider = ({ children }) => {
     }
   };
 
-  // Get Cart Item Count
-  const getCartCount = () => {
-    return Object.values(cartItems).reduce((total, qty) => total + qty, 0);
-  };
+  const getCartCount = () =>
+    Object.values(cartItems).reduce((total, qty) => total + qty, 0);
 
-  // Get Cart Total Amount
   const getCartAmount = () => {
     let totalAmount = 0;
     for (const itemId in cartItems) {
@@ -113,14 +113,14 @@ export const AppContextProvider = ({ children }) => {
     return Math.round(totalAmount * 100) / 100;
   };
 
-  // Initial data fetch on mount
+  // 🔁 Initial data fetch
   useEffect(() => {
     fetchUser();
     fetchSeller();
     fetchProducts();
   }, []);
 
-  // Sync cart items to backend when cartItems or user changes
+  // 🔁 Sync cart to backend if logged in
   useEffect(() => {
     if (!user) return;
 
