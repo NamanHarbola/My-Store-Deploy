@@ -2,6 +2,7 @@
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Razorpay from "razorpay";
+import crypto from "crypto";
 
 const razorpayInstance = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -112,5 +113,58 @@ export const placeOrderCOD = async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get all orders (for admin or user)
+export const getAllOrders = async (req, res) => {
+  try {
+    const orders = await Order.find()
+      .populate('items.product')
+      .populate('userId', 'name email');
+    return res.status(200).json({ success: true, orders });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Razorpay webhook handler
+export const razorpayWebhook = (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    // Get the signature from headers
+    const signature = req.headers['x-razorpay-signature'];
+
+    // Verify the webhook signature
+    const shasum = crypto.createHmac('sha256', secret);
+    shasum.update(req.body);
+    const digest = shasum.digest('hex');
+
+    if (signature !== digest) {
+      return res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+
+    const event = req.body.event;
+
+    if (event === 'payment.captured') {
+      const payment = req.body.payload.payment.entity;
+      // Update order status based on razorpayOrderId
+      Order.findOneAndUpdate(
+        { razorpayOrderId: payment.order_id },
+        { paymentStatus: "Paid", paymentId: payment.id },
+        { new: true }
+      ).then(updatedOrder => {
+        console.log("Order updated from webhook:", updatedOrder);
+      }).catch(err => {
+        console.error("Error updating order from webhook:", err);
+      });
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
