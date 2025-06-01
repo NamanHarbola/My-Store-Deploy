@@ -1,4 +1,3 @@
-// controllers/orderController.js
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Razorpay from "razorpay";
@@ -116,12 +115,24 @@ export const placeOrderCOD = async (req, res) => {
   }
 };
 
-// Get all orders (for admin or user)
+// Get all orders (for admin or seller)
 export const getAllOrders = async (req, res) => {
   try {
     const orders = await Order.find()
       .populate('items.product')
       .populate('userId', 'name email');
+    return res.status(200).json({ success: true, orders });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get orders of logged-in user
+export const getUserOrders = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const orders = await Order.find({ userId }).populate('items.product');
     return res.status(200).json({ success: true, orders });
   } catch (error) {
     console.error(error);
@@ -137,7 +148,7 @@ export const razorpayWebhook = (req, res) => {
     // Get the signature from headers
     const signature = req.headers['x-razorpay-signature'];
 
-    // Verify the webhook signature
+    // Verify the webhook signature using raw body
     const shasum = crypto.createHmac('sha256', secret);
     shasum.update(req.body);
     const digest = shasum.digest('hex');
