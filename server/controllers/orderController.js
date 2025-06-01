@@ -36,6 +36,8 @@ export const placeOrderRazorpay = async (req, res) => {
       paymentType: "Online",
       tax,
       subtotal,
+      isPaid: false, // initially false
+      paymentStatus: "Pending", // add a status field for frontend clarity
     });
 
     const razorpayOrder = await razorpayInstance.orders.create({
@@ -97,6 +99,8 @@ export const placeOrderCOD = async (req, res) => {
       paymentType: "Cash On Delivery",
       tax,
       subtotal,
+      isPaid: false, // COD not paid yet
+      paymentStatus: "Pending",
     });
 
     console.log("COD Order created:", order);
@@ -116,11 +120,18 @@ export const placeOrderCOD = async (req, res) => {
 };
 
 // Get all orders (for admin or seller)
+// FILTER only orders that are COD or successfully paid
 export const getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find()
+    const orders = await Order.find({
+      $or: [
+        { paymentType: "Cash On Delivery" },
+        { isPaid: true }
+      ]
+    })
       .populate('items.product')
       .populate('userId', 'name email');
+
     return res.status(200).json({ success: true, orders });
   } catch (error) {
     console.error(error);
@@ -141,14 +152,12 @@ export const getUserOrders = async (req, res) => {
 };
 
 // Razorpay webhook handler
-export const razorpayWebhook = (req, res) => {
+export const razorpayWebhook = async (req, res) => {
   try {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-
-    // Get the signature from headers
     const signature = req.headers['x-razorpay-signature'];
 
-    // Verify the webhook signature using raw body
+    // req.body is raw body buffer (because of express.raw middleware)
     const shasum = crypto.createHmac('sha256', secret);
     shasum.update(req.body);
     const digest = shasum.digest('hex');
@@ -162,15 +171,12 @@ export const razorpayWebhook = (req, res) => {
     if (event === 'payment.captured') {
       const payment = req.body.payload.payment.entity;
       // Update order status based on razorpayOrderId
-      Order.findOneAndUpdate(
+      const updatedOrder = await Order.findOneAndUpdate(
         { razorpayOrderId: payment.order_id },
-        { paymentStatus: "Paid", paymentId: payment.id },
+        { paymentStatus: "Paid", isPaid: true, paymentId: payment.id },
         { new: true }
-      ).then(updatedOrder => {
-        console.log("Order updated from webhook:", updatedOrder);
-      }).catch(err => {
-        console.error("Error updating order from webhook:", err);
-      });
+      );
+      console.log("Order updated from webhook:", updatedOrder);
     }
 
     res.status(200).json({ success: true });

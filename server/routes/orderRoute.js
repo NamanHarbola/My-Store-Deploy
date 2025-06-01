@@ -15,8 +15,6 @@ orderRouter.post('/cod', authUser, placeOrderCOD);
 orderRouter.get('/user', authUser, getUserOrders);
 orderRouter.get('/seller', authSeller, getAllOrders);
 orderRouter.post('/razorpay', authUser, placeOrderRazorpay);
-
-// IMPORTANT: use express.raw() for Razorpay webhook to verify signature correctly
 orderRouter.post('/razorpay-webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
 
 export default orderRouter;

@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAppContext } from "../context/AppContext";
 import { assets } from "../assets/assets";
 import toast from "react-hot-toast";
 import axios from "axios";
 
-// Create axios instance with backend URL & credentials
 const axiosInstance = axios.create({
-  baseURL: "https://my-store-deploy.onrender.com", // <-- your backend URL
-  withCredentials: true, // send cookies with requests
+  baseURL: "https://my-store-deploy.onrender.com",
+  withCredentials: true,
 });
 
 const Cart = () => {
@@ -34,19 +33,25 @@ const Cart = () => {
     tax: 0,
     totalAmount: 0,
   });
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
-  const getCart = () => {
-    let tempArray = [];
+  // Build cart array from cartItems and products
+  useEffect(() => {
+    if (!products.length || !cartItems) {
+      setCartArray([]);
+      return;
+    }
+    const tempArray = [];
     for (const key in cartItems) {
       const product = products.find((item) => item._id === key);
       if (product) {
-        const productCopy = { ...product, quantity: cartItems[key] };
-        tempArray.push(productCopy);
+        tempArray.push({ ...product, quantity: cartItems[key] });
       }
     }
     setCartArray(tempArray);
-  };
+  }, [products, cartItems]);
 
+  // Fetch user addresses
   const getUserAddress = async () => {
     try {
       const { data } = await axiosInstance.get("/api/address/get");
@@ -64,6 +69,11 @@ const Cart = () => {
   };
 
   useEffect(() => {
+    if (user) getUserAddress();
+  }, [user]);
+
+  // Calculate amounts whenever cart or payment option changes
+  useEffect(() => {
     const subtotal = cartArray.reduce(
       (acc, item) => acc + item.offerPrice * item.quantity,
       0
@@ -73,38 +83,31 @@ const Cart = () => {
     setOrderAmounts({ subtotal, tax, totalAmount });
   }, [cartArray, paymentOption]);
 
-  useEffect(() => {
-    if (products.length > 0 && cartItems) {
-      getCart();
-    }
-  }, [products, cartItems]);
-
-  useEffect(() => {
-    if (user) {
-      getUserAddress();
-    }
-  }, [user]);
-
   const placeOrder = async () => {
+    if (isPlacingOrder) return; // Prevent duplicate clicks
+    if (!selectedAddress) return toast.error("Please select an address");
+
+    if (cartArray.length === 0) return toast.error("Cart is empty");
+
+    const items = cartArray.map((item) => ({
+      product: item._id,
+      quantity: item.quantity,
+    }));
+
+    // Prepare payload with full address object (adjust if backend expects differently)
+    const orderPayload = {
+      userId: user._id,
+      items,
+      address: selectedAddress, 
+      amount: orderAmounts.totalAmount, // Optional, backend should verify again
+      paymentType: paymentOption,
+    };
+
+    setIsPlacingOrder(true);
+
     try {
-      if (!selectedAddress) {
-        return toast.error("Please select an address");
-      }
-
-      const items = cartArray.map((item) => ({
-        product: item._id,
-        quantity: item.quantity,
-      }));
-
-      const orderPayload = {
-        userId: user._id,
-        items,
-        address: selectedAddress._id,
-      };
-
       if (paymentOption === "COD") {
         const { data } = await axiosInstance.post("/api/order/cod", orderPayload);
-
         if (data.success) {
           toast.success(data.message);
           setCartItems({});
@@ -113,26 +116,37 @@ const Cart = () => {
           toast.error(data.message);
         }
       } else if (paymentOption === "RAZORPAY") {
+        // Initiate Razorpay order
         const { data } = await axiosInstance.post("/api/order/razorpay", orderPayload);
 
         if (data.success) {
-          setOrderAmounts({
-            subtotal: data.subtotal,
-            tax: data.tax,
-            totalAmount: data.totalAmount,
-          });
-
+          // Create Razorpay options
           const options = {
             key: data.key || import.meta.env.VITE_RAZORPAY_KEY,
-            amount: data.amount,
+            amount: data.amount, // Amount in paise
             currency: data.currency,
             order_id: data.razorpayOrderId,
             name: "GreenCart",
             description: "Purchase Order",
-            handler: function (response) {
-              toast.success("Payment Successful!");
-              setCartItems({});
-              navigate("/my-orders");
+            handler: async function (response) {
+              try {
+                const verifyRes = await axiosInstance.post("/api/payment/verify", {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                });
+
+                if (verifyRes.data.success) {
+                  toast.success("Payment Verified & Order Placed!");
+                  setCartItems({});
+                  navigate("/my-orders");
+                } else {
+                  toast.error("Payment verification failed.");
+                }
+              } catch (err) {
+                toast.error("Verification error");
+              }
+              setIsPlacingOrder(false);
             },
             prefill: {
               email: user.email,
@@ -145,20 +159,23 @@ const Cart = () => {
           };
 
           const rzp = new window.Razorpay(options);
-          rzp.on("payment.failed", function () {
-            toast.error("Payment failed. Please try again.");
+
+          rzp.on("payment.failed", (response) => {
+            toast.error(`Payment failed: ${response.error.description}`);
+            setIsPlacingOrder(false);
           });
+
           rzp.open();
         } else {
           toast.error(data.message);
+          setIsPlacingOrder(false);
         }
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || error.message);
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message);
+      setIsPlacingOrder(false);
     }
   };
-
-  const cartAmount = getCartAmount();
 
   if (!getCartCount()) {
     return (
@@ -176,6 +193,7 @@ const Cart = () => {
 
   return (
     <div className="flex flex-col md:flex-row mt-16">
+      {/* Cart Section */}
       <div className="flex-1 max-w-4xl">
         <h1 className="text-3xl font-medium mb-6">
           Shopping Cart{" "}
@@ -188,9 +206,9 @@ const Cart = () => {
           <p className="text-center">Action</p>
         </div>
 
-        {cartArray.map((product, index) => (
+        {cartArray.map((product) => (
           <div
-            key={index}
+            key={product._id}
             className="grid grid-cols-[2fr_1fr_1fr] text-gray-500 items-center text-sm md:text-base font-medium pt-3"
           >
             <div className="flex items-center md:gap-6 gap-3">
@@ -199,7 +217,7 @@ const Cart = () => {
                   navigate(
                     `/products/${product.category.toLowerCase()}/${product._id}`
                   );
-                  scrollTo(0, 0);
+                  window.scrollTo(0, 0);
                 }}
                 className="cursor-pointer w-24 h-24 flex items-center justify-center border border-gray-300 rounded"
               >
@@ -230,9 +248,9 @@ const Cart = () => {
                           : 9
                       )
                         .fill("")
-                        .map((_, index) => (
-                          <option key={index} value={index + 1}>
-                            {index + 1}
+                        .map((_, idx) => (
+                          <option key={idx} value={idx + 1}>
+                            {idx + 1}
                           </option>
                         ))}
                     </select>
@@ -247,6 +265,7 @@ const Cart = () => {
             <button
               onClick={() => removeFromCart(product._id)}
               className="cursor-pointer mx-auto"
+              aria-label={`Remove ${product.name} from cart`}
             >
               <img
                 src={assets.remove_icon}
@@ -260,7 +279,7 @@ const Cart = () => {
         <button
           onClick={() => {
             navigate("/products");
-            scrollTo(0, 0);
+            window.scrollTo(0, 0);
           }}
           className="group cursor-pointer flex items-center mt-8 gap-2 text-primary font-medium"
         >
@@ -273,6 +292,7 @@ const Cart = () => {
         </button>
       </div>
 
+      {/* Order Summary */}
       <div className="max-w-[360px] w-full bg-gray-100/40 p-5 max-md:mt-16 border border-gray-300/70">
         <h2 className="text-xl md:text-xl font-medium">Order Summary</h2>
         <hr className="border-gray-300 my-5" />
@@ -335,24 +355,25 @@ const Cart = () => {
 
         <div className="mb-6 text-sm">
           <p>
-            Subtotal: <strong>{currency}{orderAmounts.subtotal.toFixed(2)}</strong>
+            Subtotal: <span className="float-right">{currency}{orderAmounts.subtotal.toFixed(2)}</span>
           </p>
-          {paymentOption === "RAZORPAY" && (
-            <p>
-              Tax (2.11%): <strong>{currency}{orderAmounts.tax.toFixed(2)}</strong>
-            </p>
-          )}
           <p>
-            Total: <strong>{currency}{orderAmounts.totalAmount.toFixed(2)}</strong>
+            Tax (2.11%): <span className="float-right">{currency}{orderAmounts.tax.toFixed(2)}</span>
+          </p>
+          <hr className="my-2" />
+          <p className="font-semibold text-lg">
+            Total: <span className="float-right">{currency}{orderAmounts.totalAmount.toFixed(2)}</span>
           </p>
         </div>
 
         <button
-          className="bg-primary w-full py-2 text-white rounded font-semibold disabled:opacity-50"
+          disabled={isPlacingOrder}
           onClick={placeOrder}
-          disabled={cartArray.length === 0 || !selectedAddress}
+          className={`w-full py-2 rounded text-white font-semibold ${
+            isPlacingOrder ? "bg-gray-400 cursor-not-allowed" : "bg-primary hover:bg-primary-dark"
+          }`}
         >
-          Place Order
+          {isPlacingOrder ? "Processing..." : "Place Order"}
         </button>
       </div>
     </div>
