@@ -21,35 +21,40 @@ try {
   console.log('Database and Cloudinary connected');
 } catch (error) {
   console.error('Failed to connect to DB or Cloudinary:', error);
-  process.exit(1); // Exit the process if essential services fail
+  process.exit(1);
 }
 
-// Allow multiple origins (add your frontend URL here)
-const allowedOrigins = ['http://localhost:5173', 'https://your-frontend-url.com'];
+// Update this with your actual frontend URL deployed on Vercel
+const allowedOrigins = [
+  'http://localhost:5173',                  // for local dev
+  'https://my-store-deploy.vercel.app',    // your deployed frontend URL
+];
 
-// Use CORS with credentials support
+// CORS middleware setup
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin like mobile apps or curl requests
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      const msg = `CORS policy does not allow access from origin: ${origin}`;
       return callback(new Error(msg), false);
     }
     return callback(null, true);
   },
-  credentials: true,
+  credentials: true,  // allow cookies and auth headers
 }));
 
-// Must come before other body parsers and routes for webhook raw body
+// Razorpay webhook requires raw body parser before JSON parser
 app.post('/razorpay-webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
 
-// After raw parser, use JSON body parser for other routes
+// After raw parser, parse JSON for all other routes
 app.use(express.json());
 app.use(cookieParser());
 
-// Routes
+// Basic route to test API
 app.get('/', (req, res) => res.send("API is Working"));
+
+// API Routes
 app.use('/api/user', userRouter);
 app.use('/api/seller', sellerRouter);
 app.use('/api/product', productRouter);
@@ -57,12 +62,15 @@ app.use('/api/cart', cartRouter);
 app.use('/api/address', addressRouter);
 app.use('/api/order', orderRouter);
 
-// Global error handler (optional but recommended)
+// Global error handler (optional)
 app.use((err, req, res, next) => {
-  console.error('Global error handler:', err);
+  console.error('Global error handler:', err.message || err);
+  if (err.message && err.message.startsWith('CORS')) {
+    return res.status(403).json({ success: false, message: err.message });
+  }
   res.status(500).json({ success: false, message: 'Internal Server Error' });
 });
 
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
