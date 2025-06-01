@@ -19,8 +19,8 @@ const Login = () => {
     try {
       const payload =
         state === "register"
-          ? { name, email, password }
-          : { email, password };
+          ? { name: name.trim(), email: email.trim(), password }
+          : { email: email.trim(), password };
 
       const { data } = await axios.post(`/api/user/${state}`, payload);
 
@@ -33,7 +33,7 @@ const Login = () => {
         toast.error(data.message || "Something went wrong");
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || error.message);
+      toast.error(error.response?.data?.message || error.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -64,11 +64,12 @@ const Login = () => {
               className="border border-gray-200 rounded w-full p-2 mt-1 outline-primary"
               type="text"
               required
+              autoComplete="name"
             />
           </div>
         )}
 
-        <div className="w-full ">
+        <div className="w-full">
           <p>Email</p>
           <input
             onChange={(e) => setEmail(e.target.value)}
@@ -77,10 +78,11 @@ const Login = () => {
             className="border border-gray-200 rounded w-full p-2 mt-1 outline-primary"
             type="email"
             required
+            autoComplete="email"
           />
         </div>
 
-        <div className="w-full ">
+        <div className="w-full">
           <p>Password</p>
           <input
             onChange={(e) => setPassword(e.target.value)}
@@ -89,6 +91,7 @@ const Login = () => {
             className="border border-gray-200 rounded w-full p-2 mt-1 outline-primary"
             type="password"
             required
+            autoComplete={state === "login" ? "current-password" : "new-password"}
           />
         </div>
 
